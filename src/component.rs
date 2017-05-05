@@ -34,7 +34,9 @@ use super::{EventStream, Widget};
 /// [communication-attribute example](https://github.com/antoyo/relm/blob/master/examples/communication-attribute.rs)).
 #[must_use]
 #[derive(Clone)]
-pub struct Component<WIDGET: Widget> {
+pub struct Component<WIDGET: Widget>
+    where WIDGET::Msg: 'static,
+{
     stream: EventStream<WIDGET::Msg>,
     widget: Rc<RefCell<WIDGET>>,
 }

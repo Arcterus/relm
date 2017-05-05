@@ -30,9 +30,28 @@ use std::rc::Rc;
 use futures::{Async, Poll, Stream};
 use futures::task::{self, Task};
 
+type Converter<A, B> = fn(A) -> B;
+
+struct Observer<MSG, OTHERMSG> {
+    converter: Converter<MSG, OTHERMSG>,
+    stream: EventStream<OTHERMSG>,
+}
+
+trait Observable<MSG> {
+    fn call(&self, msg: MSG);
+}
+
+impl<MSG, OTHERMSG: Clone + 'static> Observable<MSG> for Observer<MSG, OTHERMSG> {
+    fn call(&self, msg: MSG) {
+        let msg = (self.converter)(msg);
+        self.stream.emit(msg);
+    }
+}
+
 struct _EventStream<MSG> {
     events: VecDeque<MSG>,
-    observers: Vec<Box<Fn(MSG)>>,
+    locked: bool,
+    observers: Vec<Box<Observable<MSG>>>,
     task: Option<Task>,
     terminated: bool,
 }
@@ -49,11 +68,12 @@ impl<MSG> Clone for EventStream<MSG> {
     }
 }
 
-impl<MSG> EventStream<MSG> {
+impl<MSG: 'static> EventStream<MSG> {
     pub fn new() -> Self {
         EventStream {
             stream: Rc::new(RefCell::new(_EventStream {
                 events: VecDeque::new(),
+                locked: false,
                 observers: vec![],
                 task: None,
                 terminated: false,
@@ -73,20 +93,25 @@ impl<MSG> EventStream<MSG> {
     pub fn emit(&self, event: MSG)
         where MSG: Clone
     {
-        let mut stream = self.stream.borrow_mut();
-        if let Some(ref task) = stream.task {
-            task.unpark();
-        }
+        if !self.stream.borrow().locked {
+            if let Some(ref task) = self.stream.borrow().task {
+                task.unpark();
+            }
 
-        for observer in &stream.observers {
-            observer(event.clone());
-        }
+            for observer in &self.stream.borrow().observers {
+                observer.call(event.clone());
+            }
 
-        stream.events.push_back(event);
+            self.stream.borrow_mut().events.push_back(event);
+        }
     }
 
     fn get_event(&self) -> Option<MSG> {
         self.stream.borrow_mut().events.pop_front()
+    }
+
+    pub fn lock(&self) {
+        self.stream.borrow_mut().locked = true;
     }
 
     fn is_terminated(&self) -> bool {
@@ -94,8 +119,15 @@ impl<MSG> EventStream<MSG> {
         stream.terminated
     }
 
-    pub fn observe<CALLBACK: Fn(MSG) + 'static>(&self, callback: CALLBACK) {
-        self.stream.borrow_mut().observers.push(Box::new(callback));
+    pub fn observe<OTHERMSG: Clone + 'static>(&self, converter: Converter<MSG, OTHERMSG>, stream: EventStream<OTHERMSG>) {
+        self.stream.borrow_mut().observers.push(Box::new(Observer {
+            converter,
+            stream,
+        }));
+    }
+
+    pub fn unlock(&self) {
+        self.stream.borrow_mut().locked = false;
     }
 }
 

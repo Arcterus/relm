@@ -64,8 +64,8 @@ macro_rules! connect {
     // This variant gives more control to the caller since it expects a `$msg` returning (Option<MSG>,
     // ReturnValue) where the ReturnValue is the value to return in the GTK+ callback.
     // Option<MSG> can be None if no message needs to be emitted.
-    // This variant also give you a model so that you can call a function that will use and mutate
-    // it.
+    // This variant also give you a widget so that you can call a function that will use and mutate
+    // its model.
     ($relm:expr, $widget:expr, $event:ident($($args:pat),*) with $widget_clone:ident $msg:expr) => {{
         let stream = $relm.stream().clone();
         #[allow(unused_mut)]
@@ -98,41 +98,12 @@ macro_rules! connect {
     }};
 
     // Connect to a message reception.
-    // This variant also give you a model so that you can call a function that will use and mutate
-    // it.
-    ($src_component:ident @ $message:pat, $dst_component:ident, with $widget:ident $msg:expr) => {
-        let stream = $dst_component.stream().clone();
-        $src_component.stream().observe(move |msg| {
-            #[allow(unreachable_patterns, unused_mut)]
-            match msg {
-                $message =>  {
-                    let $widget = $widget.upgrade().expect("upgrade should always work");
-                    let mut $widget = $widget.borrow_mut();
-                    let msg: Option<_> = $msg.into();
-                    if let Some(msg) = msg {
-                        stream.emit(msg);
-                    }
-                },
-                _ => (),
-            }
-        });
-    };
-
-    // Connect to a message reception.
     // TODO: create another macro rule accepting multiple patterns.
-    ($src_component:ident @ $message:pat, $dst_component:ident, $msg:expr) => {
+    ($src_component:ident, $dst_component:ident, $wrapper:expr) => {
+        if stringify!($src_component) == stringify!($dst_component) {
+            panic!("Recursive event connection");
+        }
         let stream = $dst_component.stream().clone();
-        $src_component.stream().observe(move |msg| {
-            #[allow(unreachable_patterns)]
-            match msg {
-                $message =>  {
-                    let msg: Option<_> = $msg.into();
-                    if let Some(msg) = msg {
-                        stream.emit(msg);
-                    }
-                },
-                _ => (),
-            }
-        });
+        $src_component.stream().observe($wrapper, stream);
     };
 }

@@ -114,8 +114,13 @@ struct CounterModel {
 
 #[derive(Msg)]
 enum CounterMsg {
+    Counter(Box<CounterMsg>),
     Decrement,
     Increment,
+}
+
+fn new_counter(msg: CounterMsg) -> CounterMsg {
+    Counter(Box::new(msg))
 }
 
 struct Counter {
@@ -144,6 +149,15 @@ impl Widget for Counter {
         let label = &self.counter_label;
 
         match event {
+            Counter(msg) => {
+                match *msg {
+                    Counter(_) | Decrement => (),
+                    Increment => {
+                        self.model.counter -= 1;
+                        label.set_text(&self.model.counter.to_string());
+                    },
+                }
+            },
             Decrement => {
                 self.model.counter -= 1;
                 label.set_text(&self.model.counter.to_string());
@@ -184,7 +198,7 @@ struct Model {
 
 #[derive(Msg)]
 enum Msg {
-    TextChange(String),
+    TextChange(TextMsg),
     Quit,
 }
 
@@ -215,8 +229,9 @@ impl Widget for Win {
 
     fn update(&mut self, event: Msg) {
         match event {
-            TextChange(text) => {
+            TextChange(Change(text)) => {
                 println!("{}", text);
+                self.counter1.stream().emit(Increment);
                 self.model.counter += 1;
                 self.label.set_text(&self.model.counter.to_string());
             },
@@ -251,9 +266,10 @@ impl Widget for Win {
         {
             let win_clone = Rc::downgrade(&win);
             let Win { ref counter1, ref counter2, ref text, ref window, .. } = *win.borrow();
-            connect!(text@Change(text), relm, TextChange(text));
-            connect!(text@Change(_), counter1, with win_clone win_clone.inc());
-            connect!(counter1@Increment, counter2, Increment);
+            connect!(text, relm, TextChange);
+            //connect!(text@Change(_), counter1, with win_clone win_clone.inc()); // TODO: is this correct to have such an event connection?
+            connect!(relm@TextChange(Change(_)), relm, Increment);
+            connect!(counter1, counter2, new_counter);
             connect!(button, connect_clicked(_), counter1, Decrement);
 
             window.add(&hbox);

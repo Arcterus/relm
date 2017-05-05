@@ -46,10 +46,16 @@ use gtk::Orientation::Vertical;
 use relm_core::EventStream;
 
 use Msg::*;
+use OtherMsg::*;
 
 struct Widgets {
     clock_label: Label,
     counter_label: Label,
+}
+
+#[derive(Clone)]
+enum OtherMsg {
+    Wrapper(Msg),
 }
 
 #[derive(Clone, Debug)]
@@ -91,10 +97,7 @@ fn main() {
 
     let other_widget_stream = EventStream::new();
     {
-        stream.observe(move |event: Msg| {
-            other_widget_stream.emit(Quit);
-            println!("Event: {:?}", event);
-        });
+        stream.observe(Wrapper, other_widget_stream);
     }
 
     {
